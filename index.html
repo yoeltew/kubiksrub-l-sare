@@ -14,9 +14,10 @@
         }
         #header {
             padding: 10px; text-align: center; width: 100%; background: #1e1e1e;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.5);
         }
         h1 { margin: 0; font-size: 1.1rem; color: #00ff88; }
-        #status { font-size: 0.85rem; color: #aaa; margin-top: 4px; }
+        #status { font-size: 0.85rem; color: #aaa; margin-top: 4px; white-space: pre-line; }
         
         #camera-container {
             position: relative; width: 100%; flex-grow: 1;
@@ -31,10 +32,11 @@
         }
         button {
             width: 90%; max-width: 320px; padding: 14px; font-size: 1rem; font-weight: bold;
-            border: none; border-radius: 20px; cursor: pointer;
+            border: none; border-radius: 20px; cursor: pointer; transition: opacity 0.2s;
         }
         .btn-scan { background: #00ff88; color: #000; }
         .btn-solve { background: #0088ff; color: #fff; display: none; }
+        button:disabled { opacity: 0.4; cursor: not-allowed; }
         
         #solution-box {
             width: 90%; max-width: 350px; background: #222; padding: 10px;
@@ -42,12 +44,13 @@
             border: 1px solid #00ff88; display: none; word-break: break-all;
         }
     </style>
+    <!-- JS-bibliotek för Kociemba tvåstegsalgoritm -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/cubejs/1.0.1/cube.js"></script>
 </head>
 <body>
 
     <div id="header">
-        <h1>Rubiks Kub-Skanner (HSV & Manuel Touch)</h1>
+        <h1>Rubiks Kub-Skanner</h1>
         <div id="status">Startar kameran...</div>
     </div>
 
@@ -74,16 +77,30 @@
         const SIDE_NAMES = ['Vit (U)', 'Röd (R)', 'Grön (F)', 'Gul (D)', 'Orange (L)', 'Blå (B)'];
         const KOCIEMBA_ORDER = ['U', 'R', 'F', 'D', 'L', 'B'];
         const COLOR_CYCLE = ['W', 'R', 'G', 'Y', 'O', 'B'];
-        const COLOR_MAP_HEX = { 'W': '#FFFFFF', 'R': '#FF0000', 'G': '#00FF00', 'Y': '#FFFF00', 'O': '#FF8800', 'B': '#0088FF' };
+        const COLOR_MAP_HEX = { 
+            'W': '#FFFFFF', 
+            'R': '#FF3333', 
+            'G': '#00FF66', 
+            'Y': '#FFFF00', 
+            'O': '#FF8800', 
+            'B': '#0088FF' 
+        };
 
         let currentSideIndex = 0;
         let scannedSides = {};
         let colorToSideMap = {};
-        let currentGridState = ['W','W','W','W','W','W','W','W','W']; // Håller avläsningen för aktiv sida
+        let currentGridState = ['W','W','W','W','W','W','W','W','W'];
 
+        // Starta mobilkameran
         navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false })
-            .then(stream => { video.srcObject = stream; statusText.innerText = "Tryck på en ruta om färgen blev fel!"; requestAnimationFrame(drawLoop); })
-            .catch(err => { statusText.innerText = "Kamerafel. Tillåt kameraåtkomst."; });
+            .then(stream => { 
+                video.srcObject = stream; 
+                statusText.innerText = "Håll kuben i rutnätet. Klicka på en cirkel om färgdetekteringen blir fel!"; 
+                requestAnimationFrame(drawLoop); 
+            })
+            .catch(err => { 
+                statusText.innerText = "Kamerafel. Tillåt kameraåtkomst i Safari/Chrome."; 
+            });
 
         function resizeCanvas() {
             if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
@@ -100,7 +117,7 @@
             return { startX, startY, cellSize, size };
         }
 
-        // Konverterar RGB till HSV för överlägsen färgseparering
+        // Konverterar RGB till HSV för stabilare färgsortering
         function rgbToHsv(r, g, b) {
             r /= 255; g /= 255; b /= 255;
             let max = Math.max(r, g, b), min = Math.min(r, g, b);
@@ -109,7 +126,7 @@
             s = max === 0 ? 0 : d / max;
 
             if (max === min) {
-                h = 0; // akromatisk (grå/vit)
+                h = 0;
             } else {
                 switch (max) {
                     case r: h = (g - b) / d + (g < b ? 6 : 0); break;
@@ -122,12 +139,12 @@
         }
 
         function classifyHSV(h, s, v) {
-            // Låg mättnad (s) eller mycket hög ljusstyrka -> Vit
-            if (s < 22 && v > 45) return 'W';
+            // Låg mättnad -> Vit
+            if (s < 22 && v > 40) return 'W';
             
-            // Färgtoner (Hue 0-360)
+            // Färgtoner baserat på Hue-vinklar (0-360 grader)
             if (h >= 345 || h < 11) return 'R';  // Röd
-            if (h >= 11 && h < 42) return 'O';   // Orange (Tydlig gräns mot gul!)
+            if (h >= 11 && h < 42) return 'O';   // Orange
             if (h >= 42 && h < 80) return 'Y';   // Gul
             if (h >= 80 && h < 160) return 'G';  // Grön
             if (h >= 160 && h < 260) return 'B'; // Blå
@@ -142,9 +159,9 @@
             if (video.readyState === video.HAVE_ENOUGH_DATA) {
                 const { startX, startY, cellSize } = getGridConfig();
 
-                // Läs av realtidsfärger kontinuerligt
                 const tempCanvas = document.createElement('canvas');
-                tempCanvas.width = canvas.width; tempCanvas.height = canvas.height;
+                tempCanvas.width = canvas.width; 
+                tempCanvas.height = canvas.height;
                 const tempCtx = tempCanvas.getContext('2d');
                 tempCtx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
@@ -156,21 +173,23 @@
                         const centerX = Math.floor(x + cellSize / 2);
                         const centerY = Math.floor(y + cellSize / 2);
 
-                        // Hämta färg från mitten av rutan
-                        const pixel = tempCtx.getImageData(centerX, centerY, 1, 1).data;
-                        const hsv = rgbToHsv(pixel[0], pixel[1], pixel[2]);
-                        
-                        // Spara den detekterade färgen i vårt tillstånd
-                        const detectedColor = classifyHSV(hsv.h, hsv.s, hsv.v);
-                        currentGridState[index] = detectedColor;
+                        // Läser bara av kontinuerligt om vi fortfarande skannar sidor
+                        if (currentSideIndex < 6) {
+                            const pixel = tempCtx.getImageData(centerX, centerY, 1, 1).data;
+                            const hsv = rgbToHsv(pixel[0], pixel[1], pixel[2]);
+                            currentGridState[index] = classifyHSV(hsv.h, hsv.s, hsv.v);
+                        }
 
-                        // Rita färgindikator (fylld cirkel)
-                        ctx.fillStyle = COLOR_MAP_HEX[detectedColor] || '#FFF';
+                        // Rita färgcirkeln mitt i varje cell
+                        ctx.fillStyle = COLOR_MAP_HEX[currentGridState[index]] || '#FFF';
                         ctx.beginPath();
-                        ctx.arc(centerX, centerY, 15, 0, 2 * Math.PI);
+                        ctx.arc(centerX, centerY, 16, 0, 2 * Math.PI);
                         ctx.fill();
+                        ctx.strokeStyle = "#ffffff";
+                        ctx.lineWidth = 2;
+                        ctx.stroke();
 
-                        // Rita ramen runt rutan
+                        // Rita ramen runt cellen
                         ctx.strokeStyle = "#00ff88";
                         ctx.lineWidth = 2;
                         ctx.strokeRect(x + 4, y + 4, cellSize - 8, cellSize - 8);
@@ -182,7 +201,7 @@
             requestAnimationFrame(drawLoop);
         }
 
-        // Gör så att man kan trycka på en ruta om kameran gissade fel!
+        // Klicka på skärmen/rutnätet för att ändra färg manuellt
         canvas.addEventListener('click', (e) => {
             const rect = canvas.getBoundingClientRect();
             const clickX = e.clientX - rect.left;
@@ -197,7 +216,6 @@
                     const y = startY + r * cellSize;
                     
                     if (clickX >= x && clickX <= x + cellSize && clickY >= y && clickY <= y + cellSize) {
-                        // Byt till nästa färg i cykeln vid manuellt klick
                         let curr = currentGridState[index];
                         let nextIdx = (COLOR_CYCLE.indexOf(curr) + 1) % COLOR_CYCLE.length;
                         currentGridState[index] = COLOR_CYCLE[nextIdx];
@@ -211,7 +229,6 @@
             if (currentSideIndex >= 6) return;
 
             const sideCode = KOCIEMBA_ORDER[currentSideIndex];
-            // Spara en kopia av den avlästa sidan
             scannedSides[sideCode] = [...currentGridState];
 
             const centerColor = currentGridState[4];
@@ -221,11 +238,40 @@
 
             if (currentSideIndex < 6) {
                 actionBtn.innerText = `SKANNA NÄSTA SIDA (${SIDE_NAMES[currentSideIndex]})`;
+                statusText.style.color = "#aaa";
                 statusText.innerText = `Skannade sidor: ${currentSideIndex}/6`;
             } else {
                 actionBtn.style.display = 'none';
                 solveBtn.style.display = 'block';
-                statusText.innerText = "Alla 6 sidor skannade! Redo att lösa.";
+                
+                // Kör valideringen direkt när alla 6 sidor skannats
+                validateColors();
+            }
+        }
+
+        function validateColors() {
+            let counts = { 'W': 0, 'R': 0, 'G': 0, 'Y': 0, 'O': 0, 'B': 0 };
+            for (let side in scannedSides) {
+                for (let color of scannedSides[side]) {
+                    counts[color] = (counts[color] || 0) + 1;
+                }
+            }
+            
+            let errors = [];
+            for (let color in counts) {
+                if (counts[color] !== 9) {
+                    errors.push(`${color}: ${counts[color]}st`);
+                }
+            }
+            
+            if (errors.length > 0) {
+                statusText.style.color = "#ff4444";
+                statusText.innerText = "FEL I SKANNINGEN! Du måste ha exakt 9 av varje färg.\nJust nu: " + errors.join(", ");
+                solveBtn.disabled = true;
+            } else {
+                statusText.style.color = "#00ff88";
+                statusText.innerText = "Perfekt! Alla färger stämmer (9 av varje).\nKlicka på 'BERÄKNA LÖSNING'.";
+                solveBtn.disabled = false;
             }
         }
 
@@ -245,9 +291,10 @@
 
                 solutionBox.innerText = "LÖSNING:\n" + solution;
                 solutionBox.style.display = 'block';
-                statusText.innerText = "Kub löst!";
+                statusText.style.color = "#00ff88";
+                statusText.innerText = "Kub löst! Följ dragen ovan.";
             } catch (e) {
-                alert("Det gick inte att beräkna lösningen. Någon färg är troligen felscannad så att kuben blev i ett omöjligt läge. Ladda om och kontrollera färgprickarna noga!");
+                alert("Det gick inte att beräkna lösningen. Någon färg hamnade på fel ställe så att kuben blev i ett omöjligt läge. Ladda om sidan och försök igen!");
                 console.error(e);
             }
         }
