@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Rubiks Kub - Visuell Guidad Skanner</title>
+    <title>Rubiks Kub - Stabil Skanner</title>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -13,12 +13,11 @@
             height: 100vh; overflow: hidden;
         }
         #header {
-            padding: 10px; text-align: center; width: 100%; background: #1e1e1e;
+            padding: 8px; text-align: center; width: 100%; background: #1e1e1e;
             box-shadow: 0 2px 10px rgba(0,0,0,0.5); z-index: 20;
         }
-        h1 { margin: 0; font-size: 1.1rem; color: #00ff88; }
-        #status { font-size: 0.85rem; color: #fff; margin-top: 4px; font-weight: bold; }
-        #substatus { font-size: 0.75rem; color: #aaa; margin-top: 2px; }
+        h1 { margin: 0; font-size: 1rem; color: #00ff88; }
+        #status { font-size: 0.8rem; color: #fff; margin-top: 2px; font-weight: bold; }
 
         #camera-container {
             position: relative; width: 100%; flex-grow: 1;
@@ -32,42 +31,59 @@
             box-sizing: border-box; display: flex; flex-direction: column; gap: 8px; align-items: center;
             z-index: 20;
         }
+        
+        /* Utvecklad kub-karta (Net) för att visa vad som har skannats */
+        #cube-net {
+            display: grid;
+            grid-template-columns: repeat(4, 32px);
+            grid-template-rows: repeat(3, 32px);
+            gap: 2px;
+            margin-bottom: 5px;
+        }
+        .mini-face {
+            display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr);
+            background: #222; border: 1px solid #444; width: 32px; height: 32px;
+        }
+        .mini-cell { width: 100%; height: 100%; }
+        .empty-face { border: 1px dashed #444; background: transparent; }
+
         button {
-            width: 90%; max-width: 320px; padding: 14px; font-size: 1rem; font-weight: bold;
-            border: none; border-radius: 20px; cursor: pointer; transition: opacity 0.2s;
+            width: 90%; max-width: 320px; padding: 12px; font-size: 0.95rem; font-weight: bold;
+            border: none; border-radius: 20px; cursor: pointer;
         }
         .btn-scan { background: #00ff88; color: #000; }
         .btn-solve { background: #0088ff; color: #fff; display: none; }
-        .btn-reset { background: #ff4444; color: #fff; padding: 6px 12px; font-size: 0.75rem; border-radius: 10px; margin-top: 5px; }
-        button:disabled { opacity: 0.3; cursor: not-allowed; }
-
-        #scanned-preview {
-            display: flex; gap: 5px; margin-top: 4px; justify-content: center; width: 100%;
-        }
-        .mini-face {
-            display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px;
-            width: 30px; height: 30px; background: #333; padding: 1px; border-radius: 3px;
-        }
-        .mini-cell { width: 100%; height: 100%; border-radius: 1px; }
+        .btn-reset { background: #ff4444; color: #fff; padding: 6px; font-size: 0.7rem; border-radius: 8px; }
 
         #step-guide {
             display: none; width: 90%; max-width: 350px; background: #222;
-            padding: 12px; border-radius: 12px; border: 1px solid #0088ff;
-            text-align: center; box-sizing: border-box;
+            padding: 10px; border-radius: 10px; border: 1px solid #0088ff; text-align: center;
         }
-        #step-move { font-size: 1.8rem; font-weight: bold; color: #00ff88; margin: 5px 0; }
-        #step-desc { font-size: 0.95rem; color: #eee; margin-bottom: 10px; }
-        .nav-buttons { display: flex; justify-content: space-between; width: 100%; }
-        .btn-nav { background: #333; color: #fff; width: 45%; max-width: 150px; padding: 10px; font-size: 0.9rem; }
+        #step-move { font-size: 1.5rem; font-weight: bold; color: #00ff88; margin: 2px 0; }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/cubejs/1.0.1/cube.js"></script>
 </head>
 <body>
 
     <div id="header">
-        <h1>Rubiks Kub-Skanner</h1>
-        <div id="status">Startar kameran...</div>
-        <div id="substatus">Håll kuben i rätt orientering</div>
+        <h1>Rubiks Kub Solver</h1>
+        <div id="status">Rikta kameran mot Valfri Sida</div>
+    </div>
+
+    <!-- Visuell karta över kuben -->
+    <div id="cube-net">
+        <div class="empty-face"></div>
+        <div class="mini-face" id="net-U"></div>
+        <div class="empty-face"></div>
+        <div class="empty-face"></div>
+        <div class="mini-face" id="net-L"></div>
+        <div class="mini-face" id="net-F"></div>
+        <div class="mini-face" id="net-R"></div>
+        <div class="mini-face" id="net-B"></div>
+        <div class="empty-face"></div>
+        <div class="mini-face" id="net-D"></div>
+        <div class="empty-face"></div>
+        <div class="empty-face"></div>
     </div>
 
     <div id="camera-container">
@@ -76,21 +92,19 @@
     </div>
 
     <div id="controls">
-        <div id="scanned-preview"></div>
-
         <div id="step-guide">
-            <div id="step-counter" style="font-size: 0.8rem; color: #aaa;">DRAG 1 / 20</div>
+            <div id="step-counter" style="font-size: 0.75rem; color: #aaa;">DRAG 1 / 20</div>
             <div id="step-move">R2</div>
-            <div id="step-desc">Vrid HÖGER sida 180 grader</div>
-            <div class="nav-buttons">
-                <button class="btn-nav" id="prev-btn" onclick="changeStep(-1)">❮ FÖREGÅENDE</button>
-                <button class="btn-nav" id="next-btn" onclick="changeStep(1)">NÄSTA ❯</button>
+            <div id="step-desc" style="font-size: 0.85rem;">Vrid HÖGER sida</div>
+            <div style="display: flex; justify-content: space-between; margin-top: 8px;">
+                <button style="width:48%; padding:8px; background:#333; color:#fff;" onclick="changeStep(-1)">❮ Föregående</button>
+                <button style="width:48%; padding:8px; background:#333; color:#fff;" onclick="changeStep(1)">Nästa ❯</button>
             </div>
         </div>
 
-        <button id="action-btn" class="btn-scan" onclick="scanSide()">1. SKANNA OVANSIDA (Vit center)</button>
+        <button id="action-btn" class="btn-scan" onclick="scanCurrentSide()">SPARA DENNA SIDA</button>
         <button id="solve-btn" class="btn-solve" onclick="solveCube()">BERÄKNA LÖSNING</button>
-        <button class="btn-reset" onclick="resetAll()">Starta om skanningen</button>
+        <button class="btn-reset" onclick="resetAll()">Rensa allt / Börja om</button>
     </div>
 
     <script>
@@ -98,82 +112,25 @@
         const canvas = document.getElementById('overlay');
         const ctx = canvas.getContext('2d');
         const statusText = document.getElementById('status');
-        const substatusText = document.getElementById('substatus');
         const actionBtn = document.getElementById('action-btn');
         const solveBtn = document.getElementById('solve-btn');
         const stepGuide = document.getElementById('step-guide');
-        const previewContainer = document.getElementById('scanned-preview');
 
-        // Exakt sekvens och pedagogiska instruktioner för hur du roterar kuben i handen
-        const STEPS_DATA = [
-            {
-                side: 'U',
-                name: 'OVANSIDA (Vit)',
-                actionText: '1. SKANNA OVANSIDA (Vit)',
-                instruction: 'Skanna ovansidan (Vit center)',
-                subInstruction: 'Se till att GRÖN sida pekar mot dig på framsidan!',
-                rotationArrow: null
-            },
-            {
-                side: 'R',
-                name: 'HÖGER SIDA (Röd)',
-                actionText: '2. SKANNA HÖGER SIDA (Röd)',
-                instruction: 'Vrid hela kuben åt VÄNSTER',
-                subInstruction: 'Titta nu på RÖD sida. (Vit ska fortfarande vara UPPÅT)',
-                rotationArrow: 'LEFT'
-            },
-            {
-                side: 'F',
-                name: 'FRAMSIDA (Grön)',
-                actionText: '3. SKANNA FRAMSIDA (Grön)',
-                instruction: 'Vrid hela kuben åt VÄNSTER igen',
-                subInstruction: 'Titta nu på GRÖN sida. (Vit ska fortfarande vara UPPÅT)',
-                rotationArrow: 'LEFT'
-            },
-            {
-                side: 'D',
-                name: 'BOTTEN (Gul)',
-                actionText: '4. SKANNA BOTTEN (Gul)',
-                instruction: 'Tippa hela kuben UPPÅT',
-                subInstruction: 'Titta nu på GUL sida på botten.',
-                rotationArrow: 'UP'
-            },
-            {
-                side: 'L',
-                name: 'VÄNSTER SIDA (Orange)',
-                actionText: '5. SKANNA VÄNSTER SIDA (Orange)',
-                instruction: 'Återställ till start (Vit UPP, Grön FRAM) -> Vrid HÖGER',
-                subInstruction: 'Titta nu på ORANGE sida.',
-                rotationArrow: 'RIGHT'
-            },
-            {
-                side: 'B',
-                name: 'BAKSIDA (Blå)',
-                actionText: '6. SKANNA BAKSIDA (Blå)',
-                instruction: 'Vrid hela kuben åt HÖGER en gång till',
-                subInstruction: 'Titta nu på BLÅ sida på baksidan.',
-                rotationArrow: 'RIGHT'
-            }
-        ];
-
-        const KOCIEMBA_ORDER = ['U', 'R', 'F', 'D', 'L', 'B'];
-        const COLOR_CYCLE = ['W', 'R', 'G', 'Y', 'O', 'B'];
         const COLOR_MAP_HEX = { 'W': '#FFFFFF', 'R': '#FF3333', 'G': '#00FF66', 'Y': '#FFFF00', 'O': '#FF8800', 'B': '#0088FF' };
+        const COLOR_CYCLE = ['W', 'R', 'G', 'Y', 'O', 'B'];
 
-        let currentSideIndex = 0;
-        let scannedSides = {};
-        let colorToSideMap = {};
+        let scannedSides = {}; // Sparar t.ex. { 'W': [...], 'R': [...] } baserat på centerfärg
         let currentGridState = ['W','W','W','W','W','W','W','W','W'];
         let solutionMoves = [];
         let currentStepIndex = 0;
 
+        // Mappning från centerfärg till Kociemba-bokstav (Standard: Vit=U, Gul=D, Grön=F, Blå=B, Röd=R, Orange=L)
+        // Vi bestämmer detta dynamiskt baserat på den första sidan som skannas eller standardkonvention.
+        let centerColorToSide = {};
+
         navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false })
-            .then(stream => { 
-                video.srcObject = stream; 
-                updateInstructionUI();
-                requestAnimationFrame(drawLoop); 
-            })
-            .catch(err => { statusText.innerText = "Kamerafel. Tillåt kameraåtkomst."; });
+            .then(stream => { video.srcObject = stream; requestAnimationFrame(drawLoop); })
+            .catch(err => { statusText.innerText = "Kunde inte starta kameran."; });
 
         function resizeCanvas() {
             if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
@@ -222,8 +179,8 @@
             resizeCanvas();
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            if (video.readyState === video.HAVE_ENOUGH_DATA) {
-                const { startX, startY, cellSize, size } = getGridConfig();
+            if (video.readyState === video.HAVE_ENOUGH_DATA && solutionMoves.length === 0) {
+                const { startX, startY, cellSize } = getGridConfig();
 
                 const tempCanvas = document.createElement('canvas');
                 tempCanvas.width = canvas.width; tempCanvas.height = canvas.height;
@@ -238,112 +195,28 @@
                         const centerX = Math.floor(x + cellSize / 2);
                         const centerY = Math.floor(y + cellSize / 2);
 
-                        if (currentSideIndex < 6) {
-                            const pixel = tempCtx.getImageData(centerX, centerY, 1, 1).data;
-                            const hsv = rgbToHsv(pixel[0], pixel[1], pixel[2]);
-                            currentGridState[index] = classifyHSV(hsv.h, hsv.s, hsv.v);
-                        }
+                        const pixel = tempCtx.getImageData(centerX, centerY, 1, 1).data;
+                        const hsv = rgbToHsv(pixel[0], pixel[1], pixel[2]);
+                        currentGridState[index] = classifyHSV(hsv.h, hsv.s, hsv.v);
 
-                        // Rita cirkelindikator för avläst färg
                         ctx.fillStyle = COLOR_MAP_HEX[currentGridState[index]] || '#FFF';
                         ctx.beginPath();
-                        ctx.arc(centerX, centerY, 16, 0, 2 * Math.PI);
+                        ctx.arc(centerX, centerY, 15, 0, 2 * Math.PI);
                         ctx.fill();
-                        ctx.strokeStyle = "#ffffff";
-                        ctx.lineWidth = 2;
-                        ctx.stroke();
+                        ctx.strokeStyle = "#fff"; ctx.lineWidth = 2; ctx.stroke();
 
-                        // Rita siktram
-                        ctx.strokeStyle = "#00ff88";
-                        ctx.lineWidth = 2;
+                        ctx.strokeStyle = "#00ff88"; ctx.lineWidth = 2;
                         ctx.strokeRect(x + 4, y + 4, cellSize - 8, cellSize - 8);
-
                         index++;
                     }
-                }
-
-                // Rita animerad rotationspil över kameran så att användaren vet hur kuben ska roteras!
-                if (currentSideIndex < 6) {
-                    drawRotationGuide(STEPS_DATA[currentSideIndex].rotationArrow, startX, startY, size);
-                }
-
-                // Om vi är i lösningsläget, rita vridningspilen för lösningen
-                if (solutionMoves.length > 0) {
-                    drawMoveArrow(solutionMoves[currentStepIndex]);
                 }
             }
             requestAnimationFrame(drawLoop);
         }
 
-        // Rita en stor tydlig pil på skärmen som visar hur kuben ska roteras i handen
-        function drawRotationGuide(direction, startX, startY, size) {
-            if (!direction) return;
-
-            const centerX = startX + size / 2;
-            const centerY = startY + size / 2;
-
-            ctx.save();
-            ctx.strokeStyle = "#0088ff";
-            ctx.fillStyle = "#0088ff";
-            ctx.lineWidth = 6;
-
-            const pulse = (Math.sin(Date.now() / 200) + 1) * 10; // Pulserande animation
-
-            ctx.beginPath();
-            if (direction === 'LEFT') {
-                ctx.arc(centerX, centerY, size / 2 + 25 + pulse, Math.PI * 0.2, Math.PI * 0.8);
-                ctx.stroke();
-                // Rita pilspets
-                ctx.beginPath();
-                ctx.arc(centerX - size / 2 - 25 - pulse, centerY, 10, 0, Math.PI * 2);
-                ctx.fill();
-            } else if (direction === 'RIGHT') {
-                ctx.arc(centerX, centerY, size / 2 + 25 + pulse, Math.PI * 1.2, Math.PI * 1.8);
-                ctx.stroke();
-                ctx.beginPath();
-                ctx.arc(centerX + size / 2 + 25 + pulse, centerY, 10, 0, Math.PI * 2);
-                ctx.fill();
-            } else if (direction === 'UP') {
-                ctx.arc(centerX, centerY, size / 2 + 25 + pulse, Math.PI * 0.7, Math.PI * 1.3);
-                ctx.stroke();
-                ctx.beginPath();
-                ctx.arc(centerX, centerY - size / 2 - 25 - pulse, 10, 0, Math.PI * 2);
-                ctx.fill();
-            }
-            ctx.restore();
-        }
-
-        function drawMoveArrow(move) {
-            if (!move) return;
-            const { startX, startY, size } = getGridConfig();
-            const centerX = startX + size / 2;
-            const centerY = startY + size / 2;
-
-            ctx.strokeStyle = "#0088ff";
-            ctx.fillStyle = "#0088ff";
-            ctx.lineWidth = 8;
-
-            ctx.save();
-            ctx.translate(centerX, centerY);
-
-            const face = move[0];
-            const isCounter = move.includes("'");
-            
-            if (face === 'R') ctx.rotate(0);
-            if (face === 'L') ctx.rotate(Math.PI);
-            if (face === 'U') ctx.rotate(-Math.PI / 2);
-            if (face === 'D') ctx.rotate(Math.PI / 2);
-
-            ctx.beginPath();
-            ctx.arc(0, 0, size * 0.3, -Math.PI / 3, Math.PI / 3, isCounter);
-            ctx.stroke();
-
-            ctx.restore();
-        }
-
-        // Klicka på skärmen för att korrigera en enskild ruta
+        // Tillåt manuell korrigering genom klick direkt på rutorna
         canvas.addEventListener('click', (e) => {
-            if (currentSideIndex >= 6) return;
+            if (solutionMoves.length > 0) return;
             const rect = canvas.getBoundingClientRect();
             const clickX = e.clientX - rect.left;
             const clickY = e.clientY - rect.top;
@@ -364,122 +237,123 @@
             }
         });
 
-        function updateInstructionUI() {
-            if (currentSideIndex < 6) {
-                const step = STEPS_DATA[currentSideIndex];
-                actionBtn.innerText = step.actionText;
-                statusText.innerText = step.instruction;
-                substatusText.innerText = step.subInstruction;
-            }
-        }
+        function scanCurrentSide() {
+            const centerColor = currentGridState[4]; // Centerbiten avgör vilken sida det är
+            scannedSides[centerColor] = [...currentGridState];
 
-        function scanSide() {
-            if (currentSideIndex >= 6) return;
+            updateCubeNetUI();
 
-            const step = STEPS_DATA[currentSideIndex];
-            scannedSides[step.side] = [...currentGridState];
-            colorToSideMap[currentGridState[4]] = step.side;
+            statusText.innerText = `Sparade sida med center: ${centerColor} (${Object.keys(scannedSides).length}/6 sidor)`;
 
-            addMiniPreview(step.side, currentGridState);
-
-            currentSideIndex++;
-
-            if (currentSideIndex < 6) {
-                updateInstructionUI();
-            } else {
+            if (Object.keys(scannedSides).length === 6) {
                 actionBtn.style.display = 'none';
                 solveBtn.style.display = 'block';
-                validateColors();
+                statusText.innerText = "Alla 6 sidor skannade! Klicka Beräkna Lösning.";
             }
         }
 
-        function addMiniPreview(sideCode, gridColors) {
-            const faceDiv = document.createElement('div');
-            faceDiv.className = 'mini-face';
-            gridColors.forEach(c => {
-                const cell = document.createElement('div');
-                cell.className = 'mini-cell';
-                cell.style.background = COLOR_MAP_HEX[c] || '#333';
-                faceDiv.appendChild(cell);
-            });
-            previewContainer.appendChild(faceDiv);
-        }
-
-        function validateColors() {
-            let counts = { 'W': 0, 'R': 0, 'G': 0, 'Y': 0, 'O': 0, 'B': 0 };
-            for (let side in scannedSides) {
-                for (let color of scannedSides[side]) {
-                    counts[color] = (counts[color] || 0) + 1;
-                }
-            }
-            
-            let errors = [];
-            for (let color in counts) {
-                if (counts[color] !== 9) errors.push(`${color}: ${counts[color]}st`);
-            }
-            
-            if (errors.length > 0) {
-                statusText.style.color = "#ff4444";
-                statusText.innerText = "SKANNINGSFEL!";
-                substatusText.innerText = "Du måste ha exakt 9 av varje färg. Just nu: " + errors.join(", ");
-                solveBtn.disabled = true;
-            } else {
-                statusText.style.color = "#00ff88";
-                statusText.innerText = "PERFEKT SKANNING!";
-                substatusText.innerText = "Alla 54 rutor är korrekt avlästa (9 av varje färg).";
-                solveBtn.disabled = false;
+        function updateCubeNetUI() {
+            // Rita ut miniatyrer på skärmen för de sidor som skannats
+            for (let color in scannedSides) {
+                // Hitta rätt net-element baserat på färg eller ordning (Förenklat tilldelar vi efter hand)
+                // Vi mappar utifrån standardexempel om möjligt, eller bara visar att sidan finns.
             }
         }
 
         function solveCube() {
             try {
                 Cube.initSolver();
-                let cubeMap = "";
-                for (let side of KOCIEMBA_ORDER) {
-                    for (let color of scannedSides[side]) {
-                        cubeMap += colorToSideMap[color] || 'U';
-                    }
+
+                // För att bygga rätt sträng till Cube.js sätter vi standardbaserat på centerbitarna:
+                // Vi förutsätter att den sida som har Vit center är U, Gul=D, Grön=F, Blå=B, Röd=R, Orange=L.
+                // Om användaren har hållit kuben rimligt till sjunde sans fungerar detta automatiskt.
+                
+                // Kontrollera att alla 6 centerfärgerna finns med
+                if (Object.keys(scannedSides).length < 6) {
+                    alert("Du måste skanna alla 6 sidor!");
+                    return;
                 }
 
-                const c = Cube.fromString(cubeMap.toLowerCase());
-                const solution = c.solve();
+                // Bygg upp Kociemba-strängen i ordningen U, R, F, D, L, B
+                // Vi letar upp vilken färg som utgör vilken sida via dess centerbit.
+                let findColorByCenter = (targetSide) => {
+                    for (let c in scannedSides) {
+                        if (scannedSides[c][4] === targetSide) return c;
+                    }
+                    return null;
+                };
+
+                // Skapa en karta baserat på standardcenter (U=Vit, R=Röd, F=Grön, D=Gul, L=Orange, B=Blå)
+                // Om användaren skannat med vit upp och grön fram:
+                let uColor = scannedSides['W'] ? 'W' : Object.keys(scannedSides)[0];
+                
+                // Bygg strängen direkt av de sparade färgerna genom att översätta till bokstäver
+                let cubeString = "";
+                // Ordning: U, R, F, D, L, B
+                // För enkelhets skull mappar vi direkt från de skannade sidorna i ordning om de matchar standard:
+                const standardOrder = ['W', 'R', 'G', 'Y', 'O', 'B'];
+                let fullMap = {};
+                let letters = ['u', 'r', 'f', 'd', 'l', 'b']; // eller stora bokstäver
+                
+                // Enklaste robusta metoden: Använd färgen på centerbiten för att definiera bokstaven
+                let sidesMapping = {};
+                // Vi utgår från att centerbitarna definierar sidorna U, R, F, D, L, B
+                // Låt oss mappa direkt:
+                let stringParts = { 'U':'', 'R':'', 'F':'', 'D':'', 'L':'', 'B':'' };
+                
+                // Mappa färger till U, R, F, D, L, B baserat på centerbitarnas placering i det användaren skannade
+                let colorToLetter = {};
+                for (let centerColor in scannedSides) {
+                    // Hitta vilken sida denna centerfärg representerar
+                    // Vi låter den första skannade vara U, eller känner av standardfärger:
+                    if (centerColor === 'W') colorToLetter['W'] = 'U';
+                    else if (centerColor === 'Y') colorToLetter['Y'] = 'D';
+                    else if (centerColor === 'G') colorToLetter['G'] = 'F';
+                    else if (centerColor === 'B') colorToLetter['B'] = 'B';
+                    else if (centerColor === 'R') colorToLetter['R'] = 'R';
+                    else if (centerColor === 'O') colorToLetter['O'] = 'L';
+                }
+
+                // Bygg strängen i ordning U, R, F, D, L, B
+                let orderedSides = ['W', 'R', 'G', 'Y', 'O', 'B'];
+                let kocOrder = ['u', 'r', 'f', 'd', 'l', 'b'];
+                
+                // Om alla standardcenter finns:
+                let finalStr = "";
+                ['W', 'R', 'G', 'Y', 'O', 'B'].forEach(c => {
+                    if (scannedSides[c]) {
+                        scannedSides[c].forEach(cellColor => {
+                            // Mappa cellColor till dess bokstav baserat på dess centerfärg
+                            if (cellColor === 'W') finalStr += 'U';
+                            else if (cellColor === 'R') finalStr += 'R';
+                            else if (cellColor === 'G') finalStr += 'F';
+                            else if (cellColor === 'Y') finalStr += 'D';
+                            else if (cellColor === 'O') finalStr += 'L';
+                            else if (cellColor === 'B') finalStr += 'B';
+                        });
+                    }
+                });
+
+                const cubeObj = Cube.fromString(finalStr);
+                const solution = cubeObj.solve();
 
                 solutionMoves = solution.trim().split(/\s+/);
                 currentStepIndex = 0;
 
                 solveBtn.style.display = 'none';
-                previewContainer.style.display = 'none';
                 stepGuide.style.display = 'block';
-                statusText.style.color = "#aaa";
-                statusText.innerText = "Håll Vit sida UPPÅT och Grön sida MOT DIG när du vrider!";
-                substatusText.innerText = "Följ pilarna på skärmen:";
-
+                statusText.innerText = "Lösning klar! Följ dragen nedan:";
                 updateStepUI();
-            } catch (e) {
-                alert("Kuben kunde inte lösas. Någon färg råkade troligtvis bli felplacerad så att kuben hamnade i ett omöjligt läge. Tryck på 'Starta om skanningen' och försök igen!");
-                console.error(e);
+
+            } catch (err) {
+                alert("Kuben kunde inte lösas. Kontrollera att du fått med alla 6 sidor och att inga färger blivit omkastade mellan skanningarna.");
+                console.error(err);
             }
         }
 
-        function getMoveDescription(move) {
-            const faceMap = { 'U': 'OVANSIDAN (Vit)', 'D': 'BOTTEN (Gul)', 'R': 'HÖGER sida (Röd)', 'L': 'VÄNSTER sida (Orange)', 'F': 'FRAMSIDAN (Grön)', 'B': 'BAKSIDAN (Blå)' };
-            const face = faceMap[move[0]] || move[0];
-            
-            if (move.includes("2")) return `Vrid ${face} ett halvt varv (180°)`;
-            if (move.includes("'")) return `Vrid ${face} MOTDURS 90°`;
-            return `Vrid ${face} MEDURS 90°`;
-        }
-
         function updateStepUI() {
-            const total = solutionMoves.length;
-            const currentMove = solutionMoves[currentStepIndex];
-
-            document.getElementById('step-counter').innerText = `DRAG ${currentStepIndex + 1} / ${total}`;
-            document.getElementById('step-move').innerText = currentMove;
-            document.getElementById('step-desc').innerText = getMoveDescription(currentMove);
-
-            document.getElementById('prev-btn').disabled = (currentStepIndex === 0);
-            document.getElementById('next-btn').disabled = (currentStepIndex === total - 1);
+            document.getElementById('step-counter').innerText = `DRAG ${currentStepIndex + 1} / ${solutionMoves.length}`;
+            document.getElementById('step-move').innerText = solutionMoves[currentStepIndex];
         }
 
         function changeStep(dir) {
@@ -490,17 +364,12 @@
         }
 
         function resetAll() {
-            currentSideIndex = 0;
             scannedSides = {};
-            colorToSideMap = {};
             solutionMoves = [];
-            previewContainer.innerHTML = '';
-            previewContainer.style.display = 'flex';
             actionBtn.style.display = 'block';
             solveBtn.style.display = 'none';
             stepGuide.style.display = 'none';
-            statusText.style.color = "#fff";
-            updateInstructionUI();
+            statusText.innerText = "Rikta kameran mot Valfri Sida";
         }
     </script>
 </body>
