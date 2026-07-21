@@ -48,6 +48,7 @@
             display: none; width: 90%; max-width: 350px; background: #222;
             padding: 15px; border-radius: 12px; border: 1px solid #00ff88; text-align: center;
         }
+        #cube-net-canvas { display: block; margin: 0 auto 12px; max-width: 100%; height: auto; }
         #step-move { font-size: 2rem; font-weight: bold; color: #00ff88; margin: 10px 0; }
         .nav-buttons { display: flex; justify-content: space-between; margin-top: 15px; }
         .btn-nav { background: #333; color: #fff; width: 48%; padding: 12px; font-size: 0.9rem; }
@@ -78,6 +79,7 @@
         <button class="btn-reset" onclick="resetAll()">Börja om från början</button>
 
         <div id="solution-box">
+            <canvas id="cube-net-canvas" width="260" height="200"></canvas>
             <div id="step-counter" style="color: #aaa; font-size: 0.9rem;">DRAG 1 / 20</div>
             <div id="step-move">R2</div>
             <div id="step-desc" style="font-size: 1rem;">Vrid HÖGER sida</div>
@@ -121,6 +123,7 @@
         let solutionMoves = [];
         let currentStepIndex = 0;
         let isSolving = false;
+        let originalCubeString = ""; // skrambel-tillståndet lösningen utgår från, används för att rita kuben vid varje steg
 
         navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false })
             .then(stream => { video.srcObject = stream; requestAnimationFrame(drawLoop); })
@@ -322,6 +325,7 @@
                     });
                 });
 
+                originalCubeString = cubeString;
                 const cubeObj = Cube.fromString(cubeString);
                 const solution = cubeObj.solve();
 
@@ -353,11 +357,134 @@
             return `Vrid ${face} MEDURS (90°)`;
         }
 
+        // Räknar ut kubens riktiga färger vid ett visst steg genom att spela upp
+        // dragen 0..n-1 på en riktig Cube-instans (cubejs) och läsa av dess tillstånd.
+        // Det gör vi hellre än att räkna ut rotationerna själva, eftersom
+        // cubejs redan är testat och garanterat korrekt.
+        function getColorStateAtStep(n) {
+            const c = Cube.fromString(originalCubeString);
+            for (let i = 0; i < n; i++) {
+                c.move(solutionMoves[i]);
+            }
+            const str = c.asString(); // 54 tecken: U(9) R(9) F(9) D(9) L(9) B(9)
+            const inverseMapping = { 'U': 'W', 'R': 'R', 'F': 'G', 'D': 'Y', 'L': 'O', 'B': 'B' };
+            const colorLetters = str.split('').map(ch => inverseMapping[ch]);
+            return {
+                U: colorLetters.slice(0, 9),
+                R: colorLetters.slice(9, 18),
+                F: colorLetters.slice(18, 27),
+                D: colorLetters.slice(27, 36),
+                L: colorLetters.slice(36, 45),
+                B: colorLetters.slice(45, 54)
+            };
+        }
+
+        function drawRotationArrow(nctx, cx, cy, radius, clockwise) {
+            const start = -2.3;
+            const sweep = 4.2;
+            const end = clockwise ? start + sweep : start - sweep;
+            const sampleBeforeEnd = clockwise ? end - 0.25 : end + 0.25;
+
+            nctx.beginPath();
+            nctx.arc(cx, cy, radius, start, end, !clockwise);
+            nctx.strokeStyle = '#00ff88';
+            nctx.lineWidth = 3;
+            nctx.lineCap = 'round';
+            nctx.stroke();
+
+            // Räkna ut pilspetsens riktning genom att jämföra med en punkt strax innan slutet av bågen,
+            // så att spetsen alltid pekar rätt oavsett medurs/moturs.
+            const tipX = cx + radius * Math.cos(end);
+            const tipY = cy + radius * Math.sin(end);
+            const preX = cx + radius * Math.cos(sampleBeforeEnd);
+            const preY = cy + radius * Math.sin(sampleBeforeEnd);
+            let dx = tipX - preX, dy = tipY - preY;
+            const len = Math.hypot(dx, dy) || 1;
+            dx /= len; dy /= len;
+            const px = -dy, py = dx;
+            const headLen = 10, headWidth = 7;
+            nctx.beginPath();
+            nctx.moveTo(tipX + dx * headLen * 0.6, tipY + dy * headLen * 0.6);
+            nctx.lineTo(tipX - dx * headLen * 0.4 + px * headWidth * 0.5, tipY - dy * headLen * 0.4 + py * headWidth * 0.5);
+            nctx.lineTo(tipX - dx * headLen * 0.4 - px * headWidth * 0.5, tipY - dy * headLen * 0.4 - py * headWidth * 0.5);
+            nctx.closePath();
+            nctx.fillStyle = '#00ff88';
+            nctx.fill();
+        }
+
+        function drawCubeNet(colors, moveStr) {
+            const canvas2 = document.getElementById('cube-net-canvas');
+            const nctx = canvas2.getContext('2d');
+            nctx.clearRect(0, 0, canvas2.width, canvas2.height);
+
+            const cellSize = 18;
+            const faceSize = cellSize * 3;
+            const faceGap = 6;
+            const netW = 4 * faceSize + 3 * faceGap;
+            const netH = 3 * faceSize + 2 * faceGap;
+            const originX = (canvas2.width - netW) / 2;
+            const originY = (canvas2.height - netH) / 2;
+
+            // Positionerna i det uppvikta kub-nätet (samma standardlayout som t.ex. Grubiks använder)
+            const slots = { U: [1, 0], L: [0, 1], F: [1, 1], R: [2, 1], B: [3, 1], D: [1, 2] };
+
+            function faceOrigin(col, row) {
+                return [originX + col * (faceSize + faceGap), originY + row * (faceSize + faceGap)];
+            }
+
+            for (const face of ['U', 'L', 'F', 'R', 'B', 'D']) {
+                const [col, row] = slots[face];
+                const [ox, oy] = faceOrigin(col, row);
+                const faceColors = colors[face];
+                for (let r = 0; r < 3; r++) {
+                    for (let c = 0; c < 3; c++) {
+                        const idx = r * 3 + c;
+                        const x = ox + c * cellSize;
+                        const y = oy + r * cellSize;
+                        nctx.fillStyle = COLOR_MAP_HEX[faceColors[idx]] || '#888';
+                        nctx.fillRect(x, y, cellSize, cellSize);
+                        nctx.strokeStyle = 'rgba(0,0,0,0.5)';
+                        nctx.lineWidth = 1;
+                        nctx.strokeRect(x + 0.5, y + 0.5, cellSize - 1, cellSize - 1);
+                    }
+                }
+                nctx.strokeStyle = '#555';
+                nctx.lineWidth = 1;
+                nctx.strokeRect(ox, oy, faceSize, faceSize);
+            }
+
+            const highlightFace = moveStr ? moveStr[0] : null;
+            if (highlightFace && slots[highlightFace]) {
+                const [col, row] = slots[highlightFace];
+                const [ox, oy] = faceOrigin(col, row);
+                nctx.strokeStyle = '#00ff88';
+                nctx.lineWidth = 3;
+                nctx.strokeRect(ox - 3, oy - 3, faceSize + 6, faceSize + 6);
+
+                const cx = ox + faceSize / 2;
+                const cy = oy + faceSize / 2;
+                const clockwise = !moveStr.includes("'");
+                drawRotationArrow(nctx, cx, cy, faceSize / 2 + 12, clockwise);
+
+                if (moveStr.includes('2')) {
+                    nctx.fillStyle = '#00ff88';
+                    nctx.font = 'bold 13px Arial';
+                    nctx.textAlign = 'center';
+                    nctx.fillText('×2', cx, oy - 8);
+                }
+            }
+        }
+
         function updateStepUI() {
             const move = solutionMoves[currentStepIndex];
             document.getElementById('step-counter').innerText = `DRAG ${currentStepIndex + 1} / ${solutionMoves.length}`;
             document.getElementById('step-move').innerText = move;
             document.getElementById('step-desc').innerText = getMoveDesc(move);
+
+            // Visa kuben som den ser ut just innan detta drag ska göras,
+            // med den sida som ska vridas markerad och en pil som visar riktningen.
+            const colorsNow = getColorStateAtStep(currentStepIndex);
+            drawCubeNet(colorsNow, move);
         }
 
         function changeStep(dir) {
