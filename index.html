@@ -52,7 +52,10 @@
         .nav-buttons { display: flex; justify-content: space-between; margin-top: 15px; }
         .btn-nav { background: #333; color: #fff; width: 48%; padding: 12px; font-size: 0.9rem; }
     </style>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/cubejs/1.0.1/cube.js"></script>
+    <!-- FIX: den gamla cdnjs-länken (cdnjs.cloudflare.com/.../cubejs/1.0.1/cube.js) gav 404.
+         cubejs (ldez/cubejs) behöver TVÅ filer: cube.js (grundmodell) och solve.js (Kociemba-lösaren). -->
+    <script src="https://cdn.jsdelivr.net/npm/cubejs@1.3.2/lib/cube.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/cubejs@1.3.2/lib/solve.js"></script>
 </head>
 <body>
 
@@ -111,6 +114,10 @@
         let currentSideIndex = 0;
         let scannedSides = {}; 
         let currentGridState = ['W','W','W','W','W','W','W','W','W'];
+        // FIX: en boolean per ruta (0-8) istället för en enda global flagga.
+        // Håller reda på VILKA rutor användaren rättat manuellt, så att kameran
+        // inte skriver över rättningen igen i nästa bildruta.
+        let manualOverrides = new Array(9).fill(false);
         let solutionMoves = [];
         let currentStepIndex = 0;
         let isSolving = false;
@@ -183,7 +190,8 @@
                         const centerX = Math.floor(x + cellSize / 2);
                         const centerY = Math.floor(y + cellSize / 2);
 
-                        if (!canvas.isManualCorrection) {
+                        // FIX: kollar bara denna specifika rutas override, inte hela nätet.
+                        if (!manualOverrides[index]) {
                             const pixel = tempCtx.getImageData(centerX, centerY, 1, 1).data;
                             const hsv = rgbToHsv(pixel[0], pixel[1], pixel[2]);
                             currentGridState[index] = classifyHSV(hsv.h, hsv.s, hsv.v);
@@ -221,8 +229,6 @@
                     ctx.textAlign = "center";
                     ctx.fillText(`↑ ${seq.upName} SIDA MÅSTE PEKA UPPÅT ↑`, startX + size / 2, startY - 17);
                 }
-                
-                canvas.isManualCorrection = false;
             }
             requestAnimationFrame(drawLoop);
         }
@@ -243,7 +249,8 @@
                         let curr = currentGridState[index];
                         let nextIdx = (COLOR_CYCLE.indexOf(curr) + 1) % COLOR_CYCLE.length;
                         currentGridState[index] = COLOR_CYCLE[nextIdx];
-                        canvas.isManualCorrection = true; 
+                        // FIX: markera bara DENNA ruta som manuellt rättad.
+                        manualOverrides[index] = true;
                     }
                     index++;
                 }
@@ -263,6 +270,8 @@
 
             scannedSides[currentSeq.face] = [...currentGridState];
             currentSideIndex++;
+            // FIX: nollställ rättningarna inför nästa sida (ny fysisk sida = ny auto-avläsning).
+            manualOverrides = new Array(9).fill(false);
             
             if (currentSideIndex < 6) {
                 const nextSeq = SCAN_SEQUENCE[currentSideIndex];
@@ -363,6 +372,7 @@
             scannedSides = {};
             solutionMoves = [];
             isSolving = false;
+            manualOverrides = new Array(9).fill(false);
             
             document.getElementById('camera-container').style.display = 'flex';
             document.querySelector('.instruction').style.display = 'block';
