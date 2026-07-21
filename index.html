@@ -3,260 +3,211 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Rubiks Kub - Stabil Skanner</title>
+    <title>Manuell Rubiks Lösare</title>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             margin: 0; padding: 0;
             background: #121212; color: #fff;
             display: flex; flex-direction: column; align-items: center;
-            height: 100vh; overflow: hidden;
+            height: 100vh; overflow-y: auto; overflow-x: hidden;
         }
         #header {
-            padding: 8px; text-align: center; width: 100%; background: #1e1e1e;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.5); z-index: 20;
+            padding: 15px; text-align: center; width: 100%; background: #1e1e1e;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.5);
         }
-        h1 { margin: 0; font-size: 1rem; color: #00ff88; }
-        #status { font-size: 0.8rem; color: #fff; margin-top: 2px; font-weight: bold; }
+        h1 { margin: 0; font-size: 1.2rem; color: #00ff88; }
+        p { font-size: 0.9rem; color: #aaa; margin: 5px 0 0 0; }
 
-        #camera-container {
-            position: relative; width: 100%; flex-grow: 1;
-            display: flex; align-items: center; justify-content: center; background: #000;
+        /* Färgpalett */
+        #palette {
+            display: flex; gap: 10px; margin: 20px 0;
+            background: #1e1e1e; padding: 10px 20px; border-radius: 30px;
         }
-        video { width: 100%; height: 100%; object-fit: cover; position: absolute; }
-        canvas { position: absolute; width: 100%; height: 100%; z-index: 10; }
+        .color-btn {
+            width: 40px; height: 40px; border-radius: 50%; border: 3px solid transparent;
+            cursor: pointer; transition: transform 0.1s;
+        }
+        .color-btn.active { border-color: #00ff88; transform: scale(1.15); }
 
-        #controls {
-            width: 100%; padding: 12px; background: #1e1e1e;
-            box-sizing: border-box; display: flex; flex-direction: column; gap: 8px; align-items: center;
-            z-index: 20;
-        }
-        
-        /* Utvecklad kub-karta (Net) för att visa vad som har skannats */
+        /* Kubens platta karta (Net) */
         #cube-net {
             display: grid;
-            grid-template-columns: repeat(4, 32px);
-            grid-template-rows: repeat(3, 32px);
-            gap: 2px;
-            margin-bottom: 5px;
+            grid-template-columns: repeat(4, 75px);
+            grid-template-rows: repeat(3, 75px);
+            gap: 10px;
+            margin-bottom: 20px;
         }
-        .mini-face {
+        .face {
             display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr);
-            background: #222; border: 1px solid #444; width: 32px; height: 32px;
+            gap: 2px; background: #333; padding: 2px; border-radius: 5px;
         }
-        .mini-cell { width: 100%; height: 100%; }
-        .empty-face { border: 1px dashed #444; background: transparent; }
+        .empty { background: transparent; }
+        .cell {
+            background: #555; border-radius: 3px; cursor: pointer;
+        }
+        .cell.center { cursor: default; } /* Centerbitar kan inte ändras */
 
+        #controls {
+            width: 100%; display: flex; flex-direction: column; align-items: center; gap: 15px; padding-bottom: 30px;
+        }
         button {
-            width: 90%; max-width: 320px; padding: 12px; font-size: 0.95rem; font-weight: bold;
+            width: 90%; max-width: 320px; padding: 15px; font-size: 1rem; font-weight: bold;
             border: none; border-radius: 20px; cursor: pointer;
         }
-        .btn-scan { background: #00ff88; color: #000; }
-        .btn-solve { background: #0088ff; color: #fff; display: none; }
-        .btn-reset { background: #ff4444; color: #fff; padding: 6px; font-size: 0.7rem; border-radius: 8px; }
+        .btn-solve { background: #0088ff; color: #fff; }
+        .btn-solve:disabled { background: #444; color: #888; cursor: not-allowed; }
 
-        #step-guide {
+        #error-msg { color: #ff4444; font-size: 0.9rem; text-align: center; width: 90%; font-weight: bold; }
+        
+        #solution-box {
             display: none; width: 90%; max-width: 350px; background: #222;
-            padding: 10px; border-radius: 10px; border: 1px solid #0088ff; text-align: center;
+            padding: 15px; border-radius: 12px; border: 1px solid #00ff88; text-align: center;
         }
-        #step-move { font-size: 1.5rem; font-weight: bold; color: #00ff88; margin: 2px 0; }
+        #step-move { font-size: 2rem; font-weight: bold; color: #00ff88; margin: 10px 0; }
+        .nav-buttons { display: flex; justify-content: space-between; margin-top: 15px; }
+        .btn-nav { background: #333; color: #fff; width: 48%; padding: 12px; font-size: 0.9rem; }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/cubejs/1.0.1/cube.js"></script>
 </head>
 <body>
 
     <div id="header">
-        <h1>Rubiks Kub Solver</h1>
-        <div id="status">Rikta kameran mot Valfri Sida</div>
+        <h1>Manuell Rubiks Lösare</h1>
+        <p>Välj färg och klicka på rutorna för att måla kuben.</p>
     </div>
 
-    <!-- Visuell karta över kuben -->
+    <div id="palette">
+        <!-- Färgval -->
+        <div class="color-btn active" style="background: #FFFFFF;" data-color="U" onclick="selectColor('U', this)"></div>
+        <div class="color-btn" style="background: #FF3333;" data-color="R" onclick="selectColor('R', this)"></div>
+        <div class="color-btn" style="background: #00FF66;" data-color="F" onclick="selectColor('F', this)"></div>
+        <div class="color-btn" style="background: #FFFF00;" data-color="D" onclick="selectColor('D', this)"></div>
+        <div class="color-btn" style="background: #FF8800;" data-color="L" onclick="selectColor('L', this)"></div>
+        <div class="color-btn" style="background: #0088FF;" data-color="B" onclick="selectColor('B', this)"></div>
+    </div>
+
+    <!-- 2D Karta av kuben -->
     <div id="cube-net">
-        <div class="empty-face"></div>
-        <div class="mini-face" id="net-U"></div>
-        <div class="empty-face"></div>
-        <div class="empty-face"></div>
-        <div class="mini-face" id="net-L"></div>
-        <div class="mini-face" id="net-F"></div>
-        <div class="mini-face" id="net-R"></div>
-        <div class="mini-face" id="net-B"></div>
-        <div class="empty-face"></div>
-        <div class="mini-face" id="net-D"></div>
-        <div class="empty-face"></div>
-        <div class="empty-face"></div>
-    </div>
-
-    <div id="camera-container">
-        <video id="video" autoplay playsinline muted></video>
-        <canvas id="overlay"></canvas>
+        <div class="face empty"></div>
+        <div class="face" id="face-U"></div>
+        <div class="face empty"></div>
+        <div class="face empty"></div>
+        
+        <div class="face" id="face-L"></div>
+        <div class="face" id="face-F"></div>
+        <div class="face" id="face-R"></div>
+        <div class="face" id="face-B"></div>
+        
+        <div class="face empty"></div>
+        <div class="face" id="face-D"></div>
+        <div class="face empty"></div>
+        <div class="face empty"></div>
     </div>
 
     <div id="controls">
-        <div id="step-guide">
-            <div id="step-counter" style="font-size: 0.75rem; color: #aaa;">DRAG 1 / 20</div>
+        <div id="error-msg">Fyll i alla rutor först!</div>
+        
+        <div id="solution-box">
+            <div id="step-counter" style="color: #aaa; font-size: 0.9rem;">DRAG 1 / 20</div>
             <div id="step-move">R2</div>
-            <div id="step-desc" style="font-size: 0.85rem;">Vrid HÖGER sida</div>
-            <div style="display: flex; justify-content: space-between; margin-top: 8px;">
-                <button style="width:48%; padding:8px; background:#333; color:#fff;" onclick="changeStep(-1)">❮ Föregående</button>
-                <button style="width:48%; padding:8px; background:#333; color:#fff;" onclick="changeStep(1)">Nästa ❯</button>
+            <div id="step-desc" style="font-size: 1rem;">Vrid Höger sida</div>
+            <div class="nav-buttons">
+                <button class="btn-nav" onclick="changeStep(-1)">❮ Bakåt</button>
+                <button class="btn-nav" onclick="changeStep(1)">Framåt ❯</button>
             </div>
         </div>
 
-        <button id="action-btn" class="btn-scan" onclick="scanCurrentSide()">SPARA DENNA SIDA</button>
-        <button id="solve-btn" class="btn-solve" onclick="solveCube()">BERÄKNA LÖSNING</button>
-        <button class="btn-reset" onclick="resetAll()">Rensa allt / Börja om</button>
+        <button id="solve-btn" class="btn-solve" onclick="solveCube()" disabled>BERÄKNA LÖSNING</button>
     </div>
 
     <script>
-        const video = document.getElementById('video');
-        const canvas = document.getElementById('overlay');
-        const ctx = canvas.getContext('2d');
-        const statusText = document.getElementById('status');
-        const actionBtn = document.getElementById('action-btn');
-        const solveBtn = document.getElementById('solve-btn');
-        const stepGuide = document.getElementById('step-guide');
+        const COLOR_HEX = { 'U': '#FFFFFF', 'R': '#FF3333', 'F': '#00FF66', 'D': '#FFFF00', 'L': '#FF8800', 'B': '#0088FF' };
+        let currentColor = 'U';
+        
+        // Håller koll på färgerna. Kociemba förväntar sig U1-U9, sedan R, F, D, L, B.
+        // Array med 9 null-värden per sida, förutom centerbiten (index 4) som är fast.
+        let cubeState = {
+            'U': [null, null, null, null, 'U', null, null, null, null],
+            'R': [null, null, null, null, 'R', null, null, null, null],
+            'F': [null, null, null, null, 'F', null, null, null, null],
+            'D': [null, null, null, null, 'D', null, null, null, null],
+            'L': [null, null, null, null, 'L', null, null, null, null],
+            'B': [null, null, null, null, 'B', null, null, null, null]
+        };
 
-        const COLOR_MAP_HEX = { 'W': '#FFFFFF', 'R': '#FF3333', 'G': '#00FF66', 'Y': '#FFFF00', 'O': '#FF8800', 'B': '#0088FF' };
-        const COLOR_CYCLE = ['W', 'R', 'G', 'Y', 'O', 'B'];
-
-        let scannedSides = {}; // Sparar t.ex. { 'W': [...], 'R': [...] } baserat på centerfärg
-        let currentGridState = ['W','W','W','W','W','W','W','W','W'];
         let solutionMoves = [];
         let currentStepIndex = 0;
 
-        // Mappning från centerfärg till Kociemba-bokstav (Standard: Vit=U, Gul=D, Grön=F, Blå=B, Röd=R, Orange=L)
-        // Vi bestämmer detta dynamiskt baserat på den första sidan som skannas eller standardkonvention.
-        let centerColorToSide = {};
-
-        navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false })
-            .then(stream => { video.srcObject = stream; requestAnimationFrame(drawLoop); })
-            .catch(err => { statusText.innerText = "Kunde inte starta kameran."; });
-
-        function resizeCanvas() {
-            if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
-                canvas.width = video.videoWidth || 640;
-                canvas.height = video.videoHeight || 480;
-            }
+        // Byt aktiv färg i paletten
+        function selectColor(colorCode, element) {
+            currentColor = colorCode;
+            document.querySelectorAll('.color-btn').forEach(btn => btn.classList.remove('active'));
+            element.classList.add('active');
         }
 
-        function getGridConfig() {
-            const size = Math.min(canvas.width, canvas.height) * 0.55;
-            const startX = (canvas.width - size) / 2;
-            const startY = (canvas.height - size) / 2;
-            const cellSize = size / 3;
-            return { startX, startY, cellSize, size };
+        // Måla en enskild ruta
+        function paintCell(face, index, cellElement) {
+            if (index === 4) return; // Centerbiten är låst!
+            cubeState[face][index] = currentColor;
+            cellElement.style.background = COLOR_HEX[currentColor];
+            validateState();
         }
 
-        function rgbToHsv(r, g, b) {
-            r /= 255; g /= 255; b /= 255;
-            let max = Math.max(r, g, b), min = Math.min(r, g, b);
-            let h, s, v = max;
-            let d = max - min;
-            s = max === 0 ? 0 : d / max;
-            if (max === min) h = 0;
-            else {
-                switch (max) {
-                    case r: h = (g - b) / d + (g < b ? 6 : 0); break;
-                    case g: h = (b - r) / d + 2; break;
-                    case b: h = (r - g) / d + 4; break;
-                }
-                h /= 6;
-            }
-            return { h: h * 360, s: s * 100, v: v * 100 };
-        }
-
-        function classifyHSV(h, s, v) {
-            if (s < 22 && v > 40) return 'W';
-            if (h >= 345 || h < 11) return 'R';
-            if (h >= 11 && h < 42) return 'O';
-            if (h >= 42 && h < 80) return 'Y';
-            if (h >= 80 && h < 160) return 'G';
-            if (h >= 160 && h < 260) return 'B';
-            return 'R';
-        }
-
-        function drawLoop() {
-            resizeCanvas();
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            if (video.readyState === video.HAVE_ENOUGH_DATA && solutionMoves.length === 0) {
-                const { startX, startY, cellSize } = getGridConfig();
-
-                const tempCanvas = document.createElement('canvas');
-                tempCanvas.width = canvas.width; tempCanvas.height = canvas.height;
-                const tempCtx = tempCanvas.getContext('2d');
-                tempCtx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-                let index = 0;
-                for (let r = 0; r < 3; r++) {
-                    for (let c = 0; c < 3; c++) {
-                        const x = startX + c * cellSize;
-                        const y = startY + r * cellSize;
-                        const centerX = Math.floor(x + cellSize / 2);
-                        const centerY = Math.floor(y + cellSize / 2);
-
-                        const pixel = tempCtx.getImageData(centerX, centerY, 1, 1).data;
-                        const hsv = rgbToHsv(pixel[0], pixel[1], pixel[2]);
-                        currentGridState[index] = classifyHSV(hsv.h, hsv.s, hsv.v);
-
-                        ctx.fillStyle = COLOR_MAP_HEX[currentGridState[index]] || '#FFF';
-                        ctx.beginPath();
-                        ctx.arc(centerX, centerY, 15, 0, 2 * Math.PI);
-                        ctx.fill();
-                        ctx.strokeStyle = "#fff"; ctx.lineWidth = 2; ctx.stroke();
-
-                        ctx.strokeStyle = "#00ff88"; ctx.lineWidth = 2;
-                        ctx.strokeRect(x + 4, y + 4, cellSize - 8, cellSize - 8);
-                        index++;
+        // Bygg gränssnittet för kub-kartan
+        function initGrid() {
+            const faces = ['U', 'L', 'F', 'R', 'B', 'D'];
+            faces.forEach(face => {
+                const container = document.getElementById('face-' + face);
+                for (let i = 0; i < 9; i++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'cell';
+                    if (i === 4) {
+                        cell.classList.add('center');
+                        cell.style.background = COLOR_HEX[face]; // Lås centerfärg
+                    } else {
+                        cell.addEventListener('click', () => paintCell(face, i, cell));
                     }
+                    container.appendChild(cell);
                 }
-            }
-            requestAnimationFrame(drawLoop);
+            });
         }
 
-        // Tillåt manuell korrigering genom klick direkt på rutorna
-        canvas.addEventListener('click', (e) => {
-            if (solutionMoves.length > 0) return;
-            const rect = canvas.getBoundingClientRect();
-            const clickX = e.clientX - rect.left;
-            const clickY = e.clientY - rect.top;
-            const { startX, startY, cellSize } = getGridConfig();
-            
-            let index = 0;
-            for (let r = 0; r < 3; r++) {
-                for (let c = 0; c < 3; c++) {
-                    const x = startX + c * cellSize;
-                    const y = startY + r * cellSize;
-                    if (clickX >= x && clickX <= x + cellSize && clickY >= y && clickY <= y + cellSize) {
-                        let curr = currentGridState[index];
-                        let nextIdx = (COLOR_CYCLE.indexOf(curr) + 1) % COLOR_CYCLE.length;
-                        currentGridState[index] = COLOR_CYCLE[nextIdx];
-                    }
-                    index++;
-                }
+        // Kontrollera att alla 54 rutor är ifyllda och att det finns exakt 9 av varje färg
+        function validateState() {
+            let counts = { 'U': 0, 'R': 0, 'F': 0, 'D': 0, 'L': 0, 'B': 0 };
+            let missing = 0;
+
+            for (let face in cubeState) {
+                cubeState[face].forEach(color => {
+                    if (color === null) missing++;
+                    else counts[color]++;
+                });
             }
-        });
 
-        function scanCurrentSide() {
-            const centerColor = currentGridState[4]; // Centerbiten avgör vilken sida det är
-            scannedSides[centerColor] = [...currentGridState];
+            const errorMsg = document.getElementById('error-msg');
+            const solveBtn = document.getElementById('solve-btn');
 
-            updateCubeNetUI();
-
-            statusText.innerText = `Sparade sida med center: ${centerColor} (${Object.keys(scannedSides).length}/6 sidor)`;
-
-            if (Object.keys(scannedSides).length === 6) {
-                actionBtn.style.display = 'none';
-                solveBtn.style.display = 'block';
-                statusText.innerText = "Alla 6 sidor skannade! Klicka Beräkna Lösning.";
+            if (missing > 0) {
+                errorMsg.innerText = `Fyll i alla rutor! (${missing} rutor kvar)`;
+                errorMsg.style.color = "#ff4444";
+                solveBtn.disabled = true;
+                return;
             }
-        }
 
-        function updateCubeNetUI() {
-            // Rita ut miniatyrer på skärmen för de sidor som skannats
-            for (let color in scannedSides) {
-                // Hitta rätt net-element baserat på färg eller ordning (Förenklat tilldelar vi efter hand)
-                // Vi mappar utifrån standardexempel om möjligt, eller bara visar att sidan finns.
+            let colorErrors = [];
+            for (let color in counts) {
+                if (counts[color] !== 9) colorErrors.push(`${color}: ${counts[color]}st`);
+            }
+
+            if (colorErrors.length > 0) {
+                errorMsg.innerText = "Ogiltig färgfördelning! Du måste ha exakt 9 av varje färg.\nFel: " + colorErrors.join(", ");
+                errorMsg.style.color = "#ff4444";
+                solveBtn.disabled = true;
+            } else {
+                errorMsg.innerText = "Perfekt! Kuben är redo att lösas.";
+                errorMsg.style.color = "#00ff88";
+                solveBtn.disabled = false;
             }
         }
 
@@ -264,96 +215,50 @@
             try {
                 Cube.initSolver();
 
-                // För att bygga rätt sträng till Cube.js sätter vi standardbaserat på centerbitarna:
-                // Vi förutsätter att den sida som har Vit center är U, Gul=D, Grön=F, Blå=B, Röd=R, Orange=L.
-                // Om användaren har hållit kuben rimligt till sjunde sans fungerar detta automatiskt.
-                
-                // Kontrollera att alla 6 centerfärgerna finns med
-                if (Object.keys(scannedSides).length < 6) {
-                    alert("Du måste skanna alla 6 sidor!");
-                    return;
-                }
-
-                // Bygg upp Kociemba-strängen i ordningen U, R, F, D, L, B
-                // Vi letar upp vilken färg som utgör vilken sida via dess centerbit.
-                let findColorByCenter = (targetSide) => {
-                    for (let c in scannedSides) {
-                        if (scannedSides[c][4] === targetSide) return c;
-                    }
-                    return null;
-                };
-
-                // Skapa en karta baserat på standardcenter (U=Vit, R=Röd, F=Grön, D=Gul, L=Orange, B=Blå)
-                // Om användaren skannat med vit upp och grön fram:
-                let uColor = scannedSides['W'] ? 'W' : Object.keys(scannedSides)[0];
-                
-                // Bygg strängen direkt av de sparade färgerna genom att översätta till bokstäver
+                // Bygg strängen i den exakta ordning biblioteket kräver: U, R, F, D, L, B
+                const order = ['U', 'R', 'F', 'D', 'L', 'B'];
                 let cubeString = "";
-                // Ordning: U, R, F, D, L, B
-                // För enkelhets skull mappar vi direkt från de skannade sidorna i ordning om de matchar standard:
-                const standardOrder = ['W', 'R', 'G', 'Y', 'O', 'B'];
-                let fullMap = {};
-                let letters = ['u', 'r', 'f', 'd', 'l', 'b']; // eller stora bokstäver
                 
-                // Enklaste robusta metoden: Använd färgen på centerbiten för att definiera bokstaven
-                let sidesMapping = {};
-                // Vi utgår från att centerbitarna definierar sidorna U, R, F, D, L, B
-                // Låt oss mappa direkt:
-                let stringParts = { 'U':'', 'R':'', 'F':'', 'D':'', 'L':'', 'B':'' };
-                
-                // Mappa färger till U, R, F, D, L, B baserat på centerbitarnas placering i det användaren skannade
-                let colorToLetter = {};
-                for (let centerColor in scannedSides) {
-                    // Hitta vilken sida denna centerfärg representerar
-                    // Vi låter den första skannade vara U, eller känner av standardfärger:
-                    if (centerColor === 'W') colorToLetter['W'] = 'U';
-                    else if (centerColor === 'Y') colorToLetter['Y'] = 'D';
-                    else if (centerColor === 'G') colorToLetter['G'] = 'F';
-                    else if (centerColor === 'B') colorToLetter['B'] = 'B';
-                    else if (centerColor === 'R') colorToLetter['R'] = 'R';
-                    else if (centerColor === 'O') colorToLetter['O'] = 'L';
-                }
-
-                // Bygg strängen i ordning U, R, F, D, L, B
-                let orderedSides = ['W', 'R', 'G', 'Y', 'O', 'B'];
-                let kocOrder = ['u', 'r', 'f', 'd', 'l', 'b'];
-                
-                // Om alla standardcenter finns:
-                let finalStr = "";
-                ['W', 'R', 'G', 'Y', 'O', 'B'].forEach(c => {
-                    if (scannedSides[c]) {
-                        scannedSides[c].forEach(cellColor => {
-                            // Mappa cellColor till dess bokstav baserat på dess centerfärg
-                            if (cellColor === 'W') finalStr += 'U';
-                            else if (cellColor === 'R') finalStr += 'R';
-                            else if (cellColor === 'G') finalStr += 'F';
-                            else if (cellColor === 'Y') finalStr += 'D';
-                            else if (cellColor === 'O') finalStr += 'L';
-                            else if (cellColor === 'B') finalStr += 'B';
-                        });
-                    }
+                order.forEach(face => {
+                    cubeState[face].forEach(color => {
+                        cubeString += color;
+                    });
                 });
 
-                const cubeObj = Cube.fromString(finalStr);
+                const cubeObj = Cube.fromString(cubeString);
                 const solution = cubeObj.solve();
 
                 solutionMoves = solution.trim().split(/\s+/);
                 currentStepIndex = 0;
 
-                solveBtn.style.display = 'none';
-                stepGuide.style.display = 'block';
-                statusText.innerText = "Lösning klar! Följ dragen nedan:";
+                document.getElementById('solve-btn').style.display = 'none';
+                document.getElementById('cube-net').style.display = 'none';
+                document.getElementById('palette').style.display = 'none';
+                document.getElementById('error-msg').innerText = "Håll Vit sida UPPÅT och Grön sida MOT DIG.";
+                document.getElementById('error-msg').style.color = "#aaa";
+                document.getElementById('solution-box').style.display = 'block';
+
                 updateStepUI();
 
             } catch (err) {
-                alert("Kuben kunde inte lösas. Kontrollera att du fått med alla 6 sidor och att inga färger blivit omkastade mellan skanningarna.");
+                alert("Det gick inte att beräkna. Du har förmodligen målat hörn eller kanter i färgkombinationer som inte kan existera i verkligheten. Rätta till färgerna och försök igen.");
                 console.error(err);
             }
         }
 
+        function getMoveDesc(move) {
+            const faces = { 'U': 'OVANSIDAN (Vit)', 'D': 'BOTTEN (Gul)', 'R': 'HÖGER (Röd)', 'L': 'VÄNSTER (Orange)', 'F': 'FRAMSIDAN (Grön)', 'B': 'BAKSIDAN (Blå)' };
+            const face = faces[move[0]];
+            if (move.includes("2")) return `Vrid ${face} ett halvt varv (180°)`;
+            if (move.includes("'")) return `Vrid ${face} MOTURS 90°`;
+            return `Vrid ${face} MEDURS 90°`;
+        }
+
         function updateStepUI() {
+            const move = solutionMoves[currentStepIndex];
             document.getElementById('step-counter').innerText = `DRAG ${currentStepIndex + 1} / ${solutionMoves.length}`;
-            document.getElementById('step-move').innerText = solutionMoves[currentStepIndex];
+            document.getElementById('step-move').innerText = move;
+            document.getElementById('step-desc').innerText = getMoveDesc(move);
         }
 
         function changeStep(dir) {
@@ -363,14 +268,8 @@
             updateStepUI();
         }
 
-        function resetAll() {
-            scannedSides = {};
-            solutionMoves = [];
-            actionBtn.style.display = 'block';
-            solveBtn.style.display = 'none';
-            stepGuide.style.display = 'none';
-            statusText.innerText = "Rikta kameran mot Valfri Sida";
-        }
+        // Starta upp ritandet av kuben när sidan laddas
+        initGrid();
     </script>
 </body>
 </html>
