@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Smart Kamera Lösare - Med Vinkelguide</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            margin: 0; padding: 0;
+            background: #121212; color: #fff;
+            display: flex; flex-direction: column; align-items: center;
+            height: 100vh; overflow: hidden;
+        }
+        #header {
+            padding: 10px; text-align: center; width: 100%; background: #1e1e1e;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.5); z-index: 20;
+        }
+        h1 { margin: 0; font-size: 1.2rem; color: #00ff88; }
+        #status { font-size: 0.9rem; color: #aaa; margin-top: 5px; font-weight: bold; }
+
+        #camera-container {
+            position: relative; width: 100%; flex-grow: 1;
+            display: flex; align-items: center; justify-content: center; background: #000;
+        }
+        video { width: 100%; height: 100%; object-fit: cover; position: absolute; }
+        canvas { position: absolute; width: 100%; height: 100%; z-index: 10; cursor: pointer; }
+
+        #controls {
+            width: 100%; padding: 15px; background: #1e1e1e;
+            box-sizing: border-box; display: flex; flex-direction: column; gap: 10px; align-items: center;
+            z-index: 20;
+        }
+
+        .instruction { font-size: 0.9rem; color: #fff; text-align: center; margin-bottom: 5px; font-weight: bold; }
+        .sub-instruction { font-size: 0.75rem; color: #aaa; text-align: center; margin-bottom: 10px; }
+
+        button {
+            width: 90%; max-width: 320px; padding: 15px; font-size: 1rem; font-weight: bold;
+            border: none; border-radius: 20px; cursor: pointer;
+        }
+        .btn-scan { background: #00ff88; color: #000; }
+        .btn-solve { background: #0088ff; color: #fff; display: none; }
+        .btn-reset { background: #ff4444; color: #fff; padding: 8px; font-size: 0.8rem; border-radius: 8px; width: 60%; margin-top: 10px;}
+        button:disabled { background: #444; color: #888; cursor: not-allowed; }
+
+        #solution-box {
+            display: none; width: 90%; max-width: 350px; background: #222;
+            padding: 15px; border-radius: 12px; border: 1px solid #00ff88; text-align: center;
+        }
+        #step-move { font-size: 2rem; font-weight: bold; color: #00ff88; margin: 10px 0; }
+        .nav-buttons { display: flex; justify-content: space-between; margin-top: 15px; }
+        .btn-nav { background: #333; color: #fff; width: 48%; padding: 12px; font-size: 0.9rem; }
+    </style>
+    <!-- FIX: den gamla cdnjs-länken (cdnjs.cloudflare.com/.../cubejs/1.0.1/cube.js) gav 404.
+         cubejs (ldez/cubejs) behöver TVÅ filer: cube.js (grundmodell) och solve.js (Kociemba-lösaren). -->
+    <script src="https://cdn.jsdelivr.net/npm/cubejs@1.3.2/lib/cube.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/cubejs@1.3.2/lib/solve.js"></script>
+</head>
+<body>
+
+    <div id="header">
+        <h1>Smart Kamera Lösare</h1>
+        <div id="status">Skanna sida 1 av 6</div>
+    </div>
+
+    <div id="camera-container">
+        <video id="video" autoplay playsinline muted></video>
+        <canvas id="overlay"></canvas>
+    </div>
+
+    <div id="controls">
+        <div class="instruction" id="main-inst">Håll upp VIT sida framför kameran</div>
+        <div class="sub-instruction">Tips: Tryck på en cirkel om kameran gissar fel färg!</div>
+        
+        <button id="action-btn" class="btn-scan" onclick="scanCurrentSide()">SPARA DENNA SIDA</button>
+        <button id="solve-btn" class="btn-solve" onclick="solveCube()">BERÄKNA LÖSNING</button>
+        <button class="btn-reset" onclick="resetAll()">Börja om från början</button>
+
+        <div id="solution-box">
+            <div id="step-counter" style="color: #aaa; font-size: 0.9rem;">DRAG 1 / 20</div>
+            <div id="step-move">R2</div>
+            <div id="step-desc" style="font-size: 1rem;">Vrid HÖGER sida</div>
+            <div class="nav-buttons">
+                <button class="btn-nav" onclick="changeStep(-1)">❮ Bakåt</button>
+                <button class="btn-nav" onclick="changeStep(1)">Framåt ❯</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('overlay');
+        const ctx = canvas.getContext('2d');
+        const statusText = document.getElementById('status');
+        const actionBtn = document.getElementById('action-btn');
+        const solveBtn = document.getElementById('solve-btn');
+        const mainInst = document.getElementById('main-inst');
+
+        const COLOR_MAP_HEX = { 'W': '#FFFFFF', 'R': '#FF3333', 'G': '#00FF66', 'Y': '#FFFF00', 'O': '#FF8800', 'B': '#0088FF' };
+        const COLOR_CYCLE = ['W', 'R', 'G', 'Y', 'O', 'B'];
+        const KOCIEMBA_FACES = ['U', 'R', 'F', 'D', 'L', 'B'];
+
+        // Den exakta ordningen vi skannar i, och exakt vilken färg som MÅSTE peka uppåt i bild
+        const SCAN_SEQUENCE = [
+            { face: 'U', center: 'W', name: 'VIT', upColor: 'B', upName: 'BLÅ' },
+            { face: 'R', center: 'R', name: 'RÖD', upColor: 'W', upName: 'VIT' },
+            { face: 'F', center: 'G', name: 'GRÖN', upColor: 'W', upName: 'VIT' },
+            { face: 'D', center: 'Y', name: 'GUL', upColor: 'G', upName: 'GRÖN' },
+            { face: 'L', center: 'O', name: 'ORANGE', upColor: 'W', upName: 'VIT' },
+            { face: 'B', center: 'B', name: 'BLÅ', upColor: 'W', upName: 'VIT' }
+        ];
+
+        let currentSideIndex = 0;
+        let scannedSides = {}; 
+        let currentGridState = ['W','W','W','W','W','W','W','W','W'];
+        // FIX: en boolean per ruta (0-8) istället för en enda global flagga.
+        // Håller reda på VILKA rutor användaren rättat manuellt, så att kameran
+        // inte skriver över rättningen igen i nästa bildruta.
+        let manualOverrides = new Array(9).fill(false);
+        let solutionMoves = [];
+        let currentStepIndex = 0;
+        let isSolving = false;
+
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false })
+            .then(stream => { video.srcObject = stream; requestAnimationFrame(drawLoop); })
+            .catch(err => { statusText.innerText = "Kunde inte starta kameran."; });
+
+        function resizeCanvas() {
+            if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+                canvas.width = video.videoWidth || 640;
+                canvas.height = video.videoHeight || 480;
+            }
+        }
+
+        function getGridConfig() {
+            const size = Math.min(canvas.width, canvas.height) * 0.6;
+            const startX = (canvas.width - size) / 2;
+            const startY = (canvas.height - size) / 2;
+            const cellSize = size / 3;
+            return { startX, startY, cellSize, size };
+        }
+
+        function rgbToHsv(r, g, b) {
+            r /= 255; g /= 255; b /= 255;
+            let max = Math.max(r, g, b), min = Math.min(r, g, b);
+            let h, s, v = max;
+            let d = max - min;
+            s = max === 0 ? 0 : d / max;
+            if (max === min) h = 0;
+            else {
+                switch (max) {
+                    case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+                    case g: h = (b - r) / d + 2; break;
+                    case b: h = (r - g) / d + 4; break;
+                }
+                h /= 6;
+            }
+            return { h: h * 360, s: s * 100, v: v * 100 };
+        }
+
+        function classifyHSV(h, s, v) {
+            if (s < 20 && v > 50) return 'W';
+            if (h >= 345 || h < 11) return 'R';
+            if (h >= 11 && h < 45) return 'O';
+            if (h >= 45 && h < 80) return 'Y';
+            if (h >= 80 && h < 160) return 'G';
+            if (h >= 160 && h < 260) return 'B';
+            return 'R';
+        }
+
+        function drawLoop() {
+            if (isSolving) return;
+            resizeCanvas();
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                const { startX, startY, cellSize, size } = getGridConfig();
+
+                const tempCanvas = document.createElement('canvas');
+                tempCanvas.width = canvas.width; tempCanvas.height = canvas.height;
+                const tempCtx = tempCanvas.getContext('2d');
+                tempCtx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+                let index = 0;
+                for (let r = 0; r < 3; r++) {
+                    for (let c = 0; c < 3; c++) {
+                        const x = startX + c * cellSize;
+                        const y = startY + r * cellSize;
+                        const centerX = Math.floor(x + cellSize / 2);
+                        const centerY = Math.floor(y + cellSize / 2);
+
+                        // FIX: kollar bara denna specifika rutas override, inte hela nätet.
+                        if (!manualOverrides[index]) {
+                            const pixel = tempCtx.getImageData(centerX, centerY, 1, 1).data;
+                            const hsv = rgbToHsv(pixel[0], pixel[1], pixel[2]);
+                            currentGridState[index] = classifyHSV(hsv.h, hsv.s, hsv.v);
+                        }
+
+                        ctx.fillStyle = COLOR_MAP_HEX[currentGridState[index]] || '#FFF';
+                        ctx.beginPath();
+                        ctx.arc(centerX, centerY, 18, 0, 2 * Math.PI);
+                        ctx.fill();
+                        ctx.strokeStyle = "#fff"; ctx.lineWidth = 3; ctx.stroke();
+                        
+                        ctx.strokeStyle = "#00ff88"; ctx.lineWidth = 2;
+                        ctx.strokeRect(x + 5, y + 5, cellSize - 10, cellSize - 10);
+                        
+                        index++;
+                    }
+                }
+                
+                // --- VISUELL VINKELGUIDE ---
+                if (currentSideIndex < 6) {
+                    const seq = SCAN_SEQUENCE[currentSideIndex];
+                    
+                    // Rita färgblocket för vad som ska peka uppåt
+                    ctx.fillStyle = COLOR_MAP_HEX[seq.upColor];
+                    ctx.fillRect(startX, startY - 35, size, 25);
+                    
+                    // Svart ram runt för tydlighet
+                    ctx.strokeStyle = "#ffffff";
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(startX, startY - 35, size, 25);
+                    
+                    // Text inuti vinkelguiden
+                    ctx.fillStyle = seq.upColor === 'W' || seq.upColor === 'Y' ? '#000000' : '#ffffff';
+                    ctx.font = "bold 14px Arial";
+                    ctx.textAlign = "center";
+                    ctx.fillText(`↑ ${seq.upName} SIDA MÅSTE PEKA UPPÅT ↑`, startX + size / 2, startY - 17);
+                }
+            }
+            requestAnimationFrame(drawLoop);
+        }
+
+        canvas.addEventListener('click', (e) => {
+            if (isSolving || currentSideIndex >= 6) return;
+            const rect = canvas.getBoundingClientRect();
+            const clickX = e.clientX - rect.left;
+            const clickY = e.clientY - rect.top;
+            const { startX, startY, cellSize } = getGridConfig();
+            
+            let index = 0;
+            for (let r = 0; r < 3; r++) {
+                for (let c = 0; c < 3; c++) {
+                    const x = startX + c * cellSize;
+                    const y = startY + r * cellSize;
+                    if (clickX >= x && clickX <= x + cellSize && clickY >= y && clickY <= y + cellSize) {
+                        let curr = currentGridState[index];
+                        let nextIdx = (COLOR_CYCLE.indexOf(curr) + 1) % COLOR_CYCLE.length;
+                        currentGridState[index] = COLOR_CYCLE[nextIdx];
+                        // FIX: markera bara DENNA ruta som manuellt rättad.
+                        manualOverrides[index] = true;
+                    }
+                    index++;
+                }
+            }
+        });
+
+        function scanCurrentSide() {
+            if (currentSideIndex >= 6) return;
+            
+            const currentSeq = SCAN_SEQUENCE[currentSideIndex];
+            
+            // Säkerställ att de faktiskt scannar rätt sida i ordningen
+            if (currentGridState[4] !== currentSeq.center) {
+                alert(`Fel sida! Du ska skanna den ${currentSeq.name} sidan nu (centerbiten måste vara ${currentSeq.name}). Rätta färgerna om kameran gissade fel!`);
+                return;
+            }
+
+            scannedSides[currentSeq.face] = [...currentGridState];
+            currentSideIndex++;
+            // FIX: nollställ rättningarna inför nästa sida (ny fysisk sida = ny auto-avläsning).
+            manualOverrides = new Array(9).fill(false);
+            
+            if (currentSideIndex < 6) {
+                const nextSeq = SCAN_SEQUENCE[currentSideIndex];
+                statusText.innerText = `Skanna sida ${currentSideIndex + 1} av 6`;
+                mainInst.innerText = `Håll upp ${nextSeq.name} sida framför kameran`;
+            } else {
+                actionBtn.style.display = 'none';
+                solveBtn.style.display = 'block';
+                mainInst.innerText = "Alla sidor sparade!";
+                statusText.innerText = "Validerar färgerna...";
+                validateColors();
+            }
+        }
+
+        function validateColors() {
+            let counts = { 'W': 0, 'R': 0, 'G': 0, 'Y': 0, 'O': 0, 'B': 0 };
+            for (let side in scannedSides) {
+                scannedSides[side].forEach(color => counts[color]++);
+            }
+
+            let errors = [];
+            for (let color in counts) {
+                if (counts[color] !== 9) errors.push(`${color}: ${counts[color]}st`);
+            }
+
+            if (errors.length > 0) {
+                statusText.style.color = "#ff4444";
+                statusText.innerText = "FEL: Färgantalet stämmer inte (ska vara 9 av varje).\n" + errors.join(", ");
+                solveBtn.disabled = true;
+            } else {
+                statusText.style.color = "#00ff88";
+                statusText.innerText = "Kuben är korrekt skannad! Tryck på Beräkna Lösning.";
+                solveBtn.disabled = false;
+            }
+        }
+
+        function solveCube() {
+            try {
+                Cube.initSolver();
+
+                // Nu när vi har tvingat in ordningen U, R, F, D, L, B kan vi bara bygga strängen
+                let cubeString = "";
+                KOCIEMBA_FACES.forEach(face => {
+                    scannedSides[face].forEach(color => {
+                        // Kociemba vill ha bokstäverna U,R,F,D,L,B. Vi mappar färgerna till dessa.
+                        const mapping = { 'W':'U', 'R':'R', 'G':'F', 'Y':'D', 'O':'L', 'B':'B' };
+                        cubeString += mapping[color];
+                    });
+                });
+
+                const cubeObj = Cube.fromString(cubeString);
+                const solution = cubeObj.solve();
+
+                solutionMoves = solution.trim().split(/\s+/);
+                currentStepIndex = 0;
+                isSolving = true;
+
+                document.getElementById('camera-container').style.display = 'none';
+                document.querySelector('.instruction').style.display = 'none';
+                document.querySelector('.sub-instruction').style.display = 'none';
+                solveBtn.style.display = 'none';
+                
+                statusText.innerText = "Håll Vit sida UPPÅT och Grön sida MOT DIG när du utför dragen.";
+                document.getElementById('solution-box').style.display = 'block';
+
+                updateStepUI();
+
+            } catch (err) {
+                alert("Beräkningen misslyckades. Vinklarna eller färgerna var felaktiga.");
+                console.error(err);
+            }
+        }
+
+        function getMoveDesc(move) {
+            const faces = { 'U': 'OVANSIDAN (Vit)', 'D': 'BOTTEN (Gul)', 'R': 'HÖGER sida (Röd)', 'L': 'VÄNSTER sida (Orange)', 'F': 'FRAMSIDAN (Grön)', 'B': 'BAKSIDAN (Blå)' };
+            const face = faces[move[0]];
+            if (move.includes("2")) return `Vrid ${face} ett halvt varv (180°)`;
+            if (move.includes("'")) return `Vrid ${face} MOTURS (90°)`;
+            return `Vrid ${face} MEDURS (90°)`;
+        }
+
+        function updateStepUI() {
+            const move = solutionMoves[currentStepIndex];
+            document.getElementById('step-counter').innerText = `DRAG ${currentStepIndex + 1} / ${solutionMoves.length}`;
+            document.getElementById('step-move').innerText = move;
+            document.getElementById('step-desc').innerText = getMoveDesc(move);
+        }
+
+        function changeStep(dir) {
+            currentStepIndex += dir;
+            if (currentStepIndex < 0) currentStepIndex = 0;
+            if (currentStepIndex >= solutionMoves.length) currentStepIndex = solutionMoves.length - 1;
+            updateStepUI();
+        }
+
+        function resetAll() {
+            currentSideIndex = 0;
+            scannedSides = {};
+            solutionMoves = [];
+            isSolving = false;
+            manualOverrides = new Array(9).fill(false);
+            
+            document.getElementById('camera-container').style.display = 'flex';
+            document.querySelector('.instruction').style.display = 'block';
+            document.querySelector('.sub-instruction').style.display = 'block';
+            actionBtn.style.display = 'block';
+            solveBtn.style.display = 'none';
+            document.getElementById('solution-box').style.display = 'none';
+            
+            mainInst.innerText = `Håll upp ${SCAN_SEQUENCE[0].name} sida framför kameran`;
+            statusText.innerText = "Skanna sida 1 av 6";
+            statusText.style.color = "#aaa";
+        }
+    </script>
+</body>
+</html>
